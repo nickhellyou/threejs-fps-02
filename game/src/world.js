@@ -151,10 +151,11 @@ export function createWorld(scene) {
   cylinder(0.45, 1.1, -8.5, 0.55, -5.5, 'hairline');
   cylinder(0.45, 1.1, 8.5, 0.55, 5.5, 'hairline');
 
-  // Crane gantry over the north end: two legs, one beam, purely for the skyline.
-  box(0.8, 9, 0.8, -16, 4.5, -16.5, 'hairline');
-  box(0.8, 9, 0.8, 16, 4.5, -16.5, 'hairline');
-  deco(33.6, 0.9, 0.9, 0, 8.6, -16.5, 'surface');
+  // Crane gantry over the north end: two legs, one beam, safety yellow so the
+  // Yard 9 skyline reads from spawn. The YARD 9 sign hangs on its beam.
+  box(0.8, 9, 0.8, -16, 4.5, -16.5, 'crane');
+  box(0.8, 9, 0.8, 16, 4.5, -16.5, 'crane');
+  deco(33.6, 0.9, 0.9, 0, 8.6, -16.5, 'crane');
 
   // Sodium lamp poles: pole + glowing head. Four point lights, no shadows, cheap.
   const lampPositions = [[-12, 6, 'accent'], [12, -6, 'teal'], [-18, -12, 'accent'], [18, 12, 'teal']];
@@ -168,20 +169,119 @@ export function createWorld(scene) {
     scene.add(light);
   }
 
+  // A letter painted upright on a wall, facing rotY (0 = south, PI = north).
+  function wallLetter(letter, x, y, z, rotY, color, size = 4.5) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, 256, 256);
+    ctx.font = 'bold 200px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = color;
+    ctx.fillText(letter, 128, 138);
+    const tex = new THREE.CanvasTexture(canvas);
+    const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false });
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(size, size), mat);
+    mesh.rotation.y = rotY;
+    mesh.position.set(x, y, z);
+    group.add(mesh);
+  }
+
+  // A big "YARD 9" sign on dark board, hung on the crane beam, facing south.
+  function yardSign(x, y, z) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 1024;
+    canvas.height = 224;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#f7b500';
+    ctx.fillRect(0, 0, 1024, 224);
+    ctx.strokeStyle = '#1d120b';
+    ctx.lineWidth = 14;
+    ctx.strokeRect(10, 10, 1004, 204);
+    ctx.font = 'bold 150px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#1d120b';
+    ctx.fillText('YARD 9', 512, 118);
+    const tex = new THREE.CanvasTexture(canvas);
+    const mat = new THREE.MeshBasicMaterial({ map: tex });
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(8.5, 1.85), mat);
+    mesh.position.set(x, y, z);
+    group.add(mesh);
+  }
+
   // Site floor markings and letters.
   deco(9, 0.05, 9, -18, 0.02, -12, 'accent');
   deco(9, 0.05, 9, 18, 0.02, 12, 'teal');
   letterPlane('A', -18, -12, PALETTE.accent);
   letterPlane('B', 18, 12, PALETTE.teal);
+  // Big site letters on the container walls, readable from across the map:
+  // A on the south face of site A's orange stack, B on the north face of site B's.
+  wallLetter('A', -19, 3.4, -11.72, 0, '#fff3e2', 4.6);
+  wallLetter('B', 19, 3.4, 11.72, Math.PI, '#fff3e2', 4.6);
+  // The Yard 9 sign hangs below the crane beam, east of centre, so it reads as
+  // a landmark without covering the top HUD bar in a north-facing shot.
+  yardSign(6, 7.2, -15.95);
 
-  // Light: cold moonlight as the key, warm dusk fill, dark sky and fog.
-  scene.background = new THREE.Color(PALETTE.canvas);
-  scene.fog = new THREE.Fog(new THREE.Color(PALETTE.canvas), 34, 95);
-  const sky = new THREE.HemisphereLight(new THREE.Color('#33415e'), new THREE.Color('#0e1420'), 1.15);
+  // Light: a low orange sun as the key, warm haze for fill, a gradient sunset
+  // sky with a visible sun disc in the north-west, and light orange fog so the
+  // far wall and the yellow crane stay readable.
+  scene.background = new THREE.Color('#e8873f');
+  scene.fog = new THREE.Fog(new THREE.Color('#e8873f'), 45, 130);
+  // Gradient sky dome: violet dusk overhead, orange at the horizon. fog:false so
+  // the haze never swallows the sky; radius 120 sits inside the camera far plane.
+  const skyCanvas = document.createElement('canvas');
+  skyCanvas.width = 16;
+  skyCanvas.height = 256;
+  const sctx = skyCanvas.getContext('2d');
+  const grad = sctx.createLinearGradient(0, 0, 0, 256);
+  grad.addColorStop(0, '#2e2a5e');
+  grad.addColorStop(0.42, '#b85c28');
+  grad.addColorStop(0.6, '#e8873f');
+  grad.addColorStop(0.72, '#f7b267');
+  grad.addColorStop(1, '#7a3a1a');
+  sctx.fillStyle = grad;
+  sctx.fillRect(0, 0, 16, 256);
+  const skyTex = new THREE.CanvasTexture(skyCanvas);
+  const skyDome = new THREE.Mesh(
+    new THREE.SphereGeometry(120, 24, 12),
+    new THREE.MeshBasicMaterial({ map: skyTex, side: THREE.BackSide, fog: false }),
+  );
+  group.add(skyDome);
+  // The sun itself: a bright disc low in the north-west sky, with a soft glow.
+  const sunGlowCanvas = document.createElement('canvas');
+  sunGlowCanvas.width = 128;
+  sunGlowCanvas.height = 128;
+  const gctx = sunGlowCanvas.getContext('2d');
+  const glow = gctx.createRadialGradient(64, 64, 4, 64, 64, 64);
+  glow.addColorStop(0, 'rgba(255, 214, 130, 0.9)');
+  glow.addColorStop(0.35, 'rgba(255, 160, 70, 0.45)');
+  glow.addColorStop(1, 'rgba(255, 160, 70, 0)');
+  gctx.fillStyle = glow;
+  gctx.fillRect(0, 0, 128, 128);
+  const glowTex = new THREE.CanvasTexture(sunGlowCanvas);
+  const sunGlow = new THREE.Mesh(
+    new THREE.PlaneGeometry(46, 46),
+    new THREE.MeshBasicMaterial({ map: glowTex, transparent: true, depthWrite: false, fog: false }),
+  );
+  sunGlow.position.set(-55, 17, -95);
+  sunGlow.lookAt(0, 1, 0);
+  group.add(sunGlow);
+  const sunDisc = new THREE.Mesh(
+    new THREE.CircleGeometry(7, 32),
+    new THREE.MeshBasicMaterial({ color: new THREE.Color('#ffd27a'), fog: false }),
+  );
+  sunDisc.position.set(-55, 17, -94);
+  sunDisc.lookAt(0, 1, 0);
+  group.add(sunDisc);
+
+  const sky = new THREE.HemisphereLight(new THREE.Color('#ffb37a'), new THREE.Color('#6b3a1e'), 1.5);
   scene.add(sky);
 
-  const key = new THREE.DirectionalLight(new THREE.Color('#cfe0ff'), 1.9);
-  key.position.set(12, 18, -10);
+  const key = new THREE.DirectionalLight(new THREE.Color('#ffb36b'), 2.6);
+  key.position.set(-30, 12, -50);
   key.target.position.set(0, 0, 2);
   key.castShadow = true;
   key.shadow.mapSize.set(2048, 2048);
@@ -193,8 +293,8 @@ export function createWorld(scene) {
   key.shadow.bias = -0.0006;
   scene.add(key, key.target);
 
-  const fill = new THREE.DirectionalLight(new THREE.Color(PALETTE.accent), 0.5);
-  fill.position.set(-10, 8, 14);
+  const fill = new THREE.DirectionalLight(new THREE.Color(PALETTE.accent), 0.9);
+  fill.position.set(10, 8, 14);
   scene.add(fill);
 
   const sites = {

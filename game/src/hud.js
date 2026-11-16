@@ -22,6 +22,7 @@ export function createHud() {
   const pipsEmber = $('pips-ember');
   const pipsWarden = $('pips-warden');
   const killfeed = $('killfeed');
+  const radioFeed = $('radio');
   const crosshair = $('crosshair');
   const hitmarker = $('hitmarker');
   const banner = $('banner');
@@ -112,6 +113,17 @@ export function createHud() {
       while (killfeed.children.length > 5) killfeed.removeChild(killfeed.lastChild);
       setTimeout(() => { if (row.parentNode) row.parentNode.removeChild(row); }, 6000);
     },
+    // Radio chatter: short bot callouts ("Vex: Contact at A"). Same lifetime as
+    // the kill feed, its own corner so the two feeds never overlap.
+    radio(text) {
+      if (!radioFeed) return;
+      const row = document.createElement('div');
+      row.className = 'radio-row';
+      row.textContent = text;
+      radioFeed.prepend(row);
+      while (radioFeed.children.length > 4) radioFeed.removeChild(radioFeed.lastChild);
+      setTimeout(() => { if (row.parentNode) row.parentNode.removeChild(row); }, 7000);
+    },
     damageFlash(strength) {
       vignette.style.opacity = String(Math.min(1, 0.25 + strength));
       setTimeout(() => { vignette.style.opacity = '0'; }, 180);
@@ -126,6 +138,12 @@ export function createHud() {
       banner.classList.add('on');
       clearTimeout(bannerTimer);
       bannerTimer = setTimeout(() => banner.classList.remove('on'), holdMs);
+    },
+    // The round intro goes away the moment the round is live: a banner that
+    // lingers over combat is a stale screenshot waiting to happen.
+    hideBanner() {
+      clearTimeout(bannerTimer);
+      banner.classList.remove('on');
     },
     setPlant(label, frac) {
       if (!label) { plantBar.classList.add('hidden'); return; }
@@ -160,9 +178,9 @@ export function createHud() {
       const sx = (x) => ((x + 24) / 48) * W;
       const sz = (z) => ((z + 18) / 36) * H;
       ctx.clearRect(0, 0, W, H);
-      ctx.fillStyle = 'rgba(14, 20, 32, 0.85)';
+      ctx.fillStyle = 'rgba(58, 42, 34, 0.9)';
       ctx.fillRect(0, 0, W, H);
-      ctx.fillStyle = '#2e3a4d';
+      ctx.fillStyle = '#8a6a4a';
       for (const c of minimapWorld.colliders) {
         if (c.max.y < 0.5) continue; // the floor would fill the whole map
         ctx.fillRect(sx(c.min.x), sz(c.min.z), Math.max(1, (c.max.x - c.min.x) / 48 * W), Math.max(1, (c.max.z - c.min.z) / 36 * H));

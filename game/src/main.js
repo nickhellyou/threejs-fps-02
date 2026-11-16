@@ -136,11 +136,20 @@ const game = {
     hud.flashWhite(strength);
   },
   startChannel(bot, type) {
-    hud.killFeed(`${bot.team === 'ember' ? 'EMBER' : 'WARDEN'} bot is ${type === 'plant' ? 'planting' : 'defusing'} the Spike`);
+    hud.killFeed(`${bot.name} is ${type === 'plant' ? 'planting' : 'defusing'} the Spike`);
+    if (type === 'plant') hud.radio(`${bot.name}: Spike going down at ${bot.planSite}, cover me`);
   },
   onSpikePickup(bot) {
-    hud.killFeed('A teammate picked up the Spike');
+    hud.killFeed(`${bot.name} picked up the Spike`);
+    hud.radio(`${bot.name}: got the Spike, heading ${bot.planSite}`);
     hud.setBomb('SPIKE WITH A TEAMMATE', false);
+  },
+  // A bot's first shot of the round is a radio callout, once per bot per round.
+  onBotShot(bot) {
+    if (bot.radioFired || !bot.alive) return;
+    bot.radioFired = true;
+    const site = siteOf(bot.pos);
+    hud.radio(`${bot.name}: Contact at ${site === 'mid' ? 'mid' : 'site ' + site}`);
   },
   completeChannel(bot, type) {
     if (type === 'plant') plantBomb(bot.planSite, bot);
@@ -202,6 +211,13 @@ function switchWeapon(id) {
   hud.setAmmo(state.mag, state.reserve);
 }
 
+// Which callout zone a position sits in: A, B, or mid. Used by radio chatter.
+function siteOf(pos) {
+  if (Math.hypot(pos.x - world.sites.A.center.x, pos.z - world.sites.A.center.z) < 9) return 'A';
+  if (Math.hypot(pos.x - world.sites.B.center.x, pos.z - world.sites.B.center.z) < 9) return 'B';
+  return 'mid';
+}
+
 function startMatch() {
   hud.hideOverlay();
   state.phase = 'buy';
@@ -251,6 +267,12 @@ function startRound() {
   hud.setGrenades(grenadeList());
   if (!shot) showBuyMenu();
   hud.banner(`ROUND ${state.round}`, `Plan: ${plan === 'aRush' ? 'Rush A' : plan === 'aSplit' ? 'Split A' : plan === 'bRush' ? 'Rush B' : 'Fake mid, hit B'} — buy up, then deploy`, 3000);
+  // The plan leader calls it on the radio as the round opens.
+  const callout = plan === 'aRush' ? 'Vex: rushing A, go go go'
+    : plan === 'aSplit' ? 'Rook: split A, two through mid'
+    : plan === 'bRush' ? 'Havoc: executing B, flash out'
+    : 'Juno: fake mid, hit B late';
+  hud.radio(callout);
 }
 
 function grenadeList() {
@@ -305,6 +327,7 @@ function startLive() {
   state.timer = ROUND_TIME;
   game.roundStart = state.now; // the 1.5 s no-fire grace starts here
   hud.hideBuy();
+  hud.hideBanner(); // the round intro is done once the round is live
   if (!shot) input.requestLock();
 }
 
@@ -316,6 +339,7 @@ function plantBomb(siteName, planter) {
   state.bomb.pos.copy(site.center);
   hud.setBomb(`SPIKE PLANTED AT ${siteName} — ${Math.ceil(state.bomb.timer)}s`, true);
   hud.banner('SPIKE PLANTED', `Site ${siteName}. Hold it for ${BOMB_FUSE} seconds.`, 3000);
+  hud.radio(`${planter === body ? 'YOU' : planter.name}: Spike down at ${siteName}, hold it`);
   audio.plant();
   game.noise(state.bomb.pos);
 }
@@ -375,9 +399,10 @@ function damageEntity(entity, dmg, part, attacker) {
   if (entity.health > 0) return;
   entity.health = 0;
   entity.alive = false;
-  const attackerName = attacker === body ? 'YOU' : attacker === null ? 'BLAST' : `${attacker.team === 'ember' ? 'EMBER' : 'WARDEN'} bot`;
-  const victimName = isPlayer ? 'YOU' : `${entity.team === 'ember' ? 'EMBER' : 'WARDEN'} bot`;
-  hud.killFeed(`${attackerName} ${part === 'head' ? '⌖' : '▸'} ${victimName}`);
+  const attackerName = attacker === body ? 'YOU' : attacker === null ? 'BLAST' : attacker.name;
+  const attackerWeapon = attacker === body ? weaponDef().name : attacker === null ? '' : WEAPONS[attacker.weapon].name;
+  const victimName = isPlayer ? 'YOU' : entity.name;
+  hud.killFeed(`${attackerName} ${part === 'head' ? '⌖' : '▸'} ${victimName}${attackerWeapon ? ` [${attackerWeapon}]` : ''}`);
   if (attacker === body) {
     state.money += 300;
     body.kills++;
@@ -716,33 +741,70 @@ function runShot(name) {
     hud.banner('ROUND 1', 'Buy up, then deploy', 4000);
   } else if (name === 'play') {
     // Two seconds of live play: bots push up the lanes. Then the player steps into
-    // mid lane, aims at the nearest defender with a clear line of sight, and fires.
+    // a close duel: 8 m from the nearest defender with a clear line of sight, so
+    // the cover frame shows an enemy, a tracer and a muzzle flash, not a speck.
     settle(120);
+    hud.radio('Vex: Contact at mid, one pushing');
+    hud.radio('Rook: rotating to mid, hold the angle');
     body.position.set(0, 0, 6);
     body.velocity.set(0, 0, 0);
     syncCamera();
-    const enemy = visibleTarget(camera.position, bots.bots.filter((b) => b.team === 'warden'))
-      || bots.bots.find((b) => b.team === 'warden' && b.alive);
+    let enemy = visibleTarget(camera.position, bots.bots.filter((b) => b.team === 'warden'));
+    const nearest = bots.bots.filter((b) => b.team === 'warden' && b.alive)
+      .sort((a, b) => a.pos.distanceTo(body.position) - b.pos.distanceTo(body.position))[0];
+    // The kill feed names a real earlier elimination: a living defender other than
+    // the duel target, so no victim is ever listed dead twice.
+    const feedVictim = bots.bots.find((b) => b.team === 'warden' && b.alive && b !== nearest);
+    if (feedVictim) hud.killFeed(`Vex ▸ ${feedVictim.name} [P9 SIDEARM]`);
+    if (nearest && (!enemy || nearest.pos.distanceTo(body.position) > 12)) {
+      // Close the distance: stand 6 m from the nearest defender, on the line back
+      // toward mid, if the spot is clear of cover.
+      const dir = new THREE.Vector3().subVectors(body.position, nearest.pos).setY(0).normalize();
+      let placed = false;
+      for (const dist of [6, 8, 10, 12]) {
+        const sx = Math.max(-23, Math.min(23, nearest.pos.x + dir.x * dist));
+        const sz = Math.max(-17, Math.min(17, nearest.pos.z + dir.z * dist));
+        const probe = new THREE.Box3(
+          new THREE.Vector3(sx - 0.4, 0.05, sz - 0.4),
+          new THREE.Vector3(sx + 0.4, 1.7, sz + 0.4),
+        );
+        if (!world.colliders.some((c) => probe.intersectsBox(c))) {
+          body.position.set(sx, 0, sz);
+          body.velocity.set(0, 0, 0);
+          syncCamera();
+          placed = true;
+          break;
+        }
+      }
+      if (placed) enemy = visibleTarget(camera.position, [nearest]);
+    }
+    if (!enemy) enemy = bots.bots.find((b) => b.team === 'warden' && b.alive);
     if (enemy) {
       aimAt(new THREE.Vector3(enemy.pos.x, enemy.pos.y + 1.3, enemy.pos.z));
       shoot();
       settle(2);
     }
+    hud.hideBanner();
   } else if (name === 'plant') {
-    // Planting at site A, seen from inside the site: the A letter on the floor, the
-    // smoke at the entrance, and the progress bar.
+    // Planting at site A, seen from inside the site: the big A on the orange stack
+    // ahead, the smoke at the entrance, the orange site floor, and the progress
+    // bar. The round intro is hidden: the round is already running, so no stale
+    // ROUND 1 banner may hang over the plant.
     state.bomb.carrier = body;
-    body.position.set(-16.5, 0, -16);
+    body.position.set(-14, 0, -6);
     body.yaw = 0;
     body.pitch = 0;
     settle(60);
     combat.throwGrenade('smoke', new THREE.Vector3(-14, 1.6, -8), new THREE.Vector3(-0.3, 0.35, -0.7), body);
     settle(100);
     state.playerChannel = { type: 'plant', t: PLANT_TIME * 0.55, duration: PLANT_TIME, site: 'A' };
-    aimAt(new THREE.Vector3(-13, 1.2, -8));
+    aimAt(new THREE.Vector3(-18, 1.8, -12));
     settle(2);
     hud.setPlant('PLANTING SPIKE — SITE A', 0.55);
     hud.setBomb('YOU HAVE THE SPIKE', false);
+    hud.radio('Rook: covering the plant, watch mid');
+    hud.killFeed('Vex ▸ Kestrel [P9 SIDEARM]');
+    hud.hideBanner();
   } else if (name === 'end') {
     // Round won: bots have had four seconds to reach the site, two defenders down.
     // The camera finds the nearest living teammate and frames them at the site.
@@ -753,6 +815,9 @@ function runShot(name) {
     hud.setScore(1, 0);
     hud.setBomb('', false);
     hud.banner('ROUND WON', 'ALL DEFENDERS DOWN — EMBER 1 : 0 WARDEN', 4000);
+    hud.radio('Vex: site clear, round is ours');
+    hud.killFeed('YOU ⌖ Sable [P9 SIDEARM]');
+    hud.killFeed('Vex ▸ Onyx [P9 SIDEARM]');
     const ally = bots.bots.find((b) => b.team === 'ember' && b.alive);
     if (ally) {
       body.position.set(

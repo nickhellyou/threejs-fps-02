@@ -62,6 +62,9 @@ export function createBots(scene, world, game) {
   for (const [a, b] of world.edges) { adj[a].push(b); adj[b].push(a); }
   const nav = { nodes: world.waypoints, adj };
 
+  // Callsigns: the kill feed and the radio name bots, not "EMBER bot".
+  const EMBER_NAMES = ['Vex', 'Rook', 'Havoc', 'Juno'];
+  const WARDEN_NAMES = ['Sable', 'Onyx', 'Kestrel', 'Bishop', 'Wraith'];
   const bots = [];
   const bodyGeo = new THREE.BoxGeometry(0.55, 1.05, 0.32);
   const headGeo = new THREE.BoxGeometry(0.34, 0.34, 0.34);
@@ -72,8 +75,8 @@ export function createBots(scene, world, game) {
     const color = team === 'ember' ? PALETTE.accent : PALETTE.teal;
     const group = new THREE.Group();
     group.visible = false; // hidden until the first round spawns the bots
-    const bodyMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#232a38'), roughness: 0.85, metalness: 0.1 });
-    const teamMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(color), roughness: 0.6, metalness: 0.1, emissive: new THREE.Color(color), emissiveIntensity: 0.5 });
+    const bodyMat = new THREE.MeshStandardMaterial({ color: new THREE.Color('#6b5a48'), roughness: 0.85, metalness: 0.1 });
+    const teamMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(color), roughness: 0.6, metalness: 0.1, emissive: new THREE.Color(color), emissiveIntensity: 0.9 });
     const body = new THREE.Mesh(bodyGeo, bodyMat);
     body.position.y = 0.85;
     body.castShadow = true;
@@ -88,7 +91,8 @@ export function createBots(scene, world, game) {
     scene.add(group);
 
     const bot = {
-      id: i, team, alive: true, health: 100, armor: 0,
+      id: i, team, name: team === 'ember' ? EMBER_NAMES[i] : WARDEN_NAMES[i - 4],
+      alive: true, health: 100, armor: 0,
       pos: new THREE.Vector3(), yaw: 0,
       group, body, head,
       weapon: 'pistol', mag: 12, reserve: 36, reloading: 0,
@@ -96,7 +100,7 @@ export function createBots(scene, world, game) {
       fireTimer: 0, burstLeft: 0, burstTimer: 0, aimTime: 0,
       target: null, targetKind: null, reaction: 0,
       plan: null, holdPos: null, holdYaw: 0, holdUntil: 0,
-      channel: null, investigate: null, blindUntil: 0,
+      channel: null, investigate: null, blindUntil: 0, radioFired: false,
       speed: BOT_SPEED, money: 800, kills: 0, hasSpike: false,
       node: 0, seed: Math.random(),
     };
@@ -130,6 +134,7 @@ export function resetBots(bots, world, nav, round, rng, player) {
     bot.state = 'move';
     bot.channel = null;
     bot.target = null;
+    bot.radioFired = false;
     bot.hasSpike = bot === spikeHolder;
     bot.investigate = null;
     bot.blindUntil = 0;
@@ -419,7 +424,8 @@ function botFire(ctx, bot, targetPos) {
     const entity = hit.object.userData.entity;
     const part = hit.object.userData.part;
     end = hit.point.clone();
-    if (entity && entity !== bot && entity.alive) {
+    // No friendly fire: a teammate in the line of fire absorbs the bullet.
+    if (entity && entity !== bot && entity.alive && entity.team !== bot.team) {
       const dmg = part === 'head' ? BOT_DAMAGE * BOT_HEAD_MULT : BOT_DAMAGE;
       game.damageEntity(entity, dmg, part, bot);
     }
@@ -427,6 +433,7 @@ function botFire(ctx, bot, targetPos) {
   game.spawnTracer(muzzle, end, bot.team === 'ember' ? PALETTE.accent : PALETTE.teal);
   game.playShot(bot.pos, bot.weapon, true);
   game.noise(bot.pos, 26);
+  if (game.onBotShot) game.onBotShot(bot);
 }
 
 // Axis-separated movement with AABB collision, shared with the player code.

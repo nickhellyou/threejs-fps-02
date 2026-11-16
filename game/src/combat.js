@@ -63,7 +63,8 @@ export function createCombat(scene, world, game) {
       const entity = hit.object.userData.entity;
       const part = hit.object.userData.part;
       end = hit.point.clone();
-      if (entity && entity !== shooter && entity.alive) {
+      // No friendly fire: a teammate in the line of fire absorbs the bullet.
+      if (entity && entity !== shooter && entity.alive && entity.team !== shooter.team) {
         const dmg = part === 'head' ? def.damage * def.headMult : def.damage;
         game.damageEntity(entity, dmg, part, shooter);
         result = { entity, part, damage: dmg };

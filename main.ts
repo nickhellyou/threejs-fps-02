@@ -1,74 +1,50 @@
-// EMBERLINE hand-in.
+// EMBERLINE, a threejs-fps entry (Node 22, standard library only). The game lives
+// in game/ as plain static files the browser loads as ES modules, three.js from an
+// import map, and this program hands it in: it stages game/ and screenshots/ from
+// beside this file into the output directory and writes dossier.json there, the
+// summary the judge reads, using the vendored make.fun library.
 //
-// This program takes the finished game and its screenshots out of the
-// repository and lays them down in the output directory, then asks the
-// kit's dossier builder to describe that output for the scorer.
+// The dossier's first screenshot by name is the cover, so screenshots/ is named
+// for presentation order: a-combat (a mid-combat duel) first, then the plant, the
+// round win, and the buy menu.
 //
-//   node main.ts                            writes to /output (the grader)
-//   MAKEFUN_OUTPUT_DIR=out node main.ts     writes to out/ instead
-//
-// Node 22 runs this file as-is: no build step, no install, nothing but
-// the standard library plus the vendored dossier builder.
+// Run it locally with MAKEFUN_OUTPUT_DIR set to a scratch directory:
+//   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
+// Serve the game itself with `node serve.ts`, then open http://localhost:8080.
 
-import { cpSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { buildDossier } from "./vendor/makefun-threejs.ts";
+import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { buildDossier } from './vendor/makefun-threejs.ts';
 
-// The folders this program stages, and the dossier's file name.
-const GAME_FOLDER = "game";
-const SHOTS_FOLDER = "screenshots";
-const DOSSIER_FILE = "dossier.json";
-
-// The grader's directory when no override is given.
-const DEFAULT_OUTPUT = "/output";
-
-// The dossier caps from the bounty's gate: how much source text the
-// judge reads, how many screenshots and how large each may be, and how
-// much the game tree may hold. The game entry cap is the platform's
-// thousand output entries less the seven the rest of the output costs.
+// The scorer's own caps, from the bounty's gate.json: the text cap shapes the
+// dossier's bytes; the rest refuse an entry the scorer would refuse (more than 4
+// screenshots or one over 256 KiB; more than 993 files in game/ or 48 MiB of game
+// files in all, since game/ counts beside the output directory's own 1000-entry
+// cap, its screenshots/ and its dossier.json).
 const DOSSIER_CAPS = {
-  text_max_bytes: 160 * 1024,
-  screenshots: { max: 4, max_bytes: 256 * 1024 },
-  game_max_files: 1000 - 7,
-  game_max_bytes: 48 * 1024 * 1024,
-  game_path_max_bytes: 1000,
+  text_max_bytes: 163840,
+  screenshots: { max: 4, max_bytes: 262144 },
+  game_max_files: 993,
+  game_max_bytes: 50331648,
 };
 
-// The folder this file sits in is the repository root.
-function repositoryRoot(): string {
-  return dirname(fileURLToPath(import.meta.url));
-}
-
-// The output directory: the environment's override, else the grader's.
-function outputDirectory(): string {
-  const override = process.env.MAKEFUN_OUTPUT_DIR;
-  return override !== undefined && override !== "" ? override : DEFAULT_OUTPUT;
-}
-
-// Lay one repository folder down in the output directory, replacing
-// whatever an earlier run left there so a second run writes the same
-// bytes as the first. When the output directory is the repository
-// itself there is nothing to lay down: the folders are already there.
-function stageFolder(repo: string, out: string, name: string): void {
-  const source = join(repo, name);
-  const target = join(out, name);
-  if (source === target) return;
-  rmSync(target, { recursive: true, force: true });
+function stageDirectory(source, target) {
+  if (!existsSync(source)) return false;
   cpSync(source, target, { recursive: true });
+  return true;
 }
 
-// Hand the entry in: stage the game and its screenshots, build the
-// dossier from what was staged, and write it beside them.
-function handIn(): void {
-  const repo = repositoryRoot();
-  const out = outputDirectory();
+function main() {
+  const here = fileURLToPath(new URL('.', import.meta.url));
+  const out = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
   mkdirSync(out, { recursive: true });
-  stageFolder(repo, out, GAME_FOLDER);
-  stageFolder(repo, out, SHOTS_FOLDER);
+  stageDirectory(join(here, 'game'), join(out, 'game'));
+  mkdirSync(join(out, 'screenshots'), { recursive: true });
+  stageDirectory(join(here, 'screenshots'), join(out, 'screenshots'));
   const dossier = buildDossier(out, DOSSIER_CAPS);
-  writeFileSync(join(out, DOSSIER_FILE), dossier);
-  console.log(`wrote ${join(out, DOSSIER_FILE)} (${dossier.length} bytes)`);
+  writeFileSync(join(out, 'dossier.json'), dossier);
+  console.log(`dossier written: ${dossier.length} bytes`);
 }
 
-handIn();
+main();

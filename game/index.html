@@ -5,18 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>EMBERLINE: 5v5 plant/defuse tactical FPS</title>
 <style>
-  /* Look plan: dusk canvas, steel surface, hairline trim, ink text, muted steel,
-     sodium accent, warden teal, danger red, gold money. Every colour is one of these. */
+  /* Look plan: sunset canvas, warm steel, hairline trim, ink text, muted warm,
+     bright orange accent, warden teal, danger red, gold money. Every colour is one of these. */
   :root {
-    --canvas: #0e1420;
-    --surface: #1b2434;
-    --hairline: #2e3a4d;
-    --ink: #e9e6df;
-    --muted: #8fa3b8;
-    --accent: #f08a1d;
+    --canvas: #1d120b;
+    --surface: #2e1f16;
+    --hairline: #54402e;
+    --ink: #fff3e2;
+    --muted: #c9a582;
+    --accent: #ff9a2e;
     --teal: #2ec4b6;
     --danger: #e5484d;
-    --gold: #f0c040;
+    --gold: #ffc53d;
     --radius-panel: 4px;
     --radius-control: 8px;
     --font-ui: system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -70,13 +70,14 @@
   }
   #bomb-status.urgent { color: var(--danger); }
 
-  /* Kill feed, top left. */
+  /* Kill feed, top right, under the minimap. */
   #killfeed {
     position: fixed;
-    top: 16px;
-    left: 16px;
+    top: 164px;
+    right: 16px;
     display: grid;
     gap: 4px;
+    justify-items: end;
     font-family: var(--font-readout);
     font-size: 13px;
     color: var(--muted);
@@ -84,6 +85,24 @@
   .feed-row {
     background: color-mix(in srgb, var(--canvas) 72%, transparent);
     border: 1px solid var(--hairline);
+    border-radius: var(--radius-panel);
+    padding: 4px 8px;
+  }
+
+  /* Radio chatter, bottom left above the vitals: short bot callouts. */
+  #radio {
+    position: fixed;
+    left: 24px;
+    bottom: 128px;
+    display: grid;
+    gap: 4px;
+    font-family: var(--font-readout);
+    font-size: 13px;
+    color: var(--ink);
+  }
+  .radio-row {
+    background: color-mix(in srgb, var(--canvas) 72%, transparent);
+    border-left: 3px solid var(--accent);
     border-radius: var(--radius-panel);
     padding: 4px 8px;
   }
@@ -318,6 +337,7 @@
   <div id="bomb-status"></div>
   <div id="killfeed"></div>
   <canvas id="minimap" width="180" height="135"></canvas>
+  <div id="radio"></div>
   <div id="crosshair"><i></i><i></i><i></i><i></i></div>
   <div id="hitmarker"><i></i><i></i><i></i><i></i></div>
   <div id="vitals">
